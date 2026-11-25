@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHP Assessments WOZ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --line: #e6e6e6; --soft: #f7f7f7;
+  --text: #1a1a1a; --text-2: #555555; --muted: #8a8a8a;
+  --accent: #2a6aa8;
+  /* year colours (Excel style), fixed by year so a year looks the same in every chart */
+  --y2021: #2a6aa8; --y2022: #e07b39; --y2023: #3d7a35; --y2024: #4aa3df; --y2025: #8e4fb0; --y2026: #d64545;
+  --nmw1: #2a6aa8; --nmw2: #e07b39;
+  --good: #3d9b3d; --warn: #f0b429; --crit: #d64545;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 0 16px 48px; }
+
+header.top { border-bottom: 1px solid var(--line); background: var(--bg); }
+.top .wrap { display: flex; align-items: center; gap: 12px; padding: 14px 16px; flex-wrap: wrap; }
+.brand { margin-right: auto; }
+.brand b { font-size: 18px; }
+.brand span { display: block; color: var(--muted); font-size: 12.5px; }
+.status { color: var(--muted); font-size: 12.5px; }
+.btn { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { background: var(--soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+nav.tabs { display: flex; gap: 2px; margin: 18px 0 20px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav.tabs button { border: 0; background: none; padding: 10px 16px; cursor: pointer; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 500; }
+nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+section.block { margin-bottom: 36px; }
+.block h2 { font-size: 17px; font-weight: 600; text-align: center; color: #555; margin: 0 0 4px; }
+.block .sub { text-align: center; color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+.block h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+
+.years { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.years .lbl { color: var(--text-2); font-size: 13px; margin-right: 4px; }
+.chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.chip[aria-pressed="true"] { border-color: #bdbdbd; background: var(--soft); font-weight: 600; }
+.chip[aria-pressed="false"] { color: var(--muted); }
+.chip[aria-pressed="false"] i { opacity: .25; }
+.chip.all { font-weight: 500; }
+.legend { display: flex; justify-content: center; gap: 16px; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+
+.chartbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
+.chartbar label { font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.chartscroll { overflow-x: auto; }
+.chartbox { position: relative; height: 440px; }
+.empty { text-align: center; color: var(--muted); padding: 60px 0; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.num, th.num { text-align: center; }
+table.pivot th { text-align: left; font-weight: 600; background: var(--soft); }
+table.pivot th.num { text-align: center; }
+table.pivot tr.grp td { font-weight: 700; }
+table.pivot tr.fac td:first-child { padding-left: 20px; }
+table.pivot tr.yr td:first-child { padding-left: 36px; color: var(--text-2); }
+table.pivot tr.gt td { font-weight: 700; border-top: 2px solid #cfcfcf; }
+.xl { color: var(--muted); font-size: 11px; }
+
+table.sheet td:first-child { position: sticky; left: 0; background: #fff; font-weight: 600; text-align: left; border-right: 1px solid var(--line); }
+table.sheet tr.head td { font-weight: 600; }
+table.sheet tr.band td { font-weight: 700; background: var(--soft); }
+table.sheet tr.total td { font-weight: 700; background: #eef6ea; }
+table.sheet tr.calc td { background: #f2f2f2; color: var(--text-2); }
+table.sheet tr.pct td { font-weight: 700; background: #e3f0dc; }
+table.sheet tr.avg td { background: #eef6ea; font-weight: 600; }
+table.sheet tr.secscore td { background: #f2f2f2; font-weight: 600; }
+table.sheet tr.gap td { height: 8px; padding: 0; }
+.na { color: var(--muted); }
+.s0 { color: var(--crit); font-weight: 700; } .s1 { color: #b7791f; font-weight: 700; } .s2 { color: var(--good); font-weight: 700; }
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+select { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 8px; }
+
+.center { min-height: 60vh; display: grid; place-items: center; }
+.login { width: min(380px, 100%); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+.login h1 { font-size: 18px; margin: 0 0 4px; }
+.login p { color: var(--text-2); margin: 0 0 14px; font-size: 13px; }
+.login label { display: block; font-size: 13px; color: var(--text-2); margin: 10px 0 4px; }
+.login input { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.login .btn { width: 100%; margin-top: 16px; padding: 9px; }
+.err { color: var(--crit); font-size: 13px; margin-top: 10px; min-height: 18px; }
+.loading { color: var(--text-2); display: flex; align-items: center; gap: 10px; }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: sp .8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.notes { font-size: 12.5px; color: var(--text-2); margin-top: 6px; }
+.notes summary { cursor: pointer; color: var(--muted); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><b>VHP Assessments WOZ</b><span>Clinical · WASH · Nurse Mid-Wife</span></div>
+    <span class="status" id="status"></span>
+    <button class="btn hidden" id="refreshBtn">Refresh</button>
+    <button class="btn primary hidden" id="exportBtn">Export Excel</button>
+    <button class="btn hidden" id="signoutBtn">Sign out</button>
+  </div>
+</header>
+<main class="wrap" id="app"><div class="center"><div class="loading"><div class="spin"></div>Loading…</div></div></main>
+
+<template id="loginTpl">
+  <div class="center">
+    <form class="login" id="loginForm">
+      <h1>Sign in to ArcGIS</h1>
+      <p>Sign in with an ArcGIS Online account that can view the VHP surveys. Your password goes only to ArcGIS.</p>
+      <label for="u">Username</label><input id="u" autocomplete="username" required>
+      <label for="p">Password</label><input id="p" type="password" autocomplete="current-password" required>
+      <button class="btn primary" type="submit" id="loginBtn">Sign in</button>
+      <div class="err" id="loginErr"></div>
+    </form>
+  </div>
+</template>
+
+<script>
+/* ============================== CONFIG ============================== */
+const PORTAL = "https://www.arcgis.com";
+const SVC = "https://services.arcgis.com/00Ya326J0OxGcPmF/arcgis/rest/services";
+const PCT_ADJ = "PERCENTAGE (Total Score/Adjusted)";
+
+const FACILITIES = [
+  ["Mizan Tepi University Teaching", "Regional Hospital", ["aman (mtuth)", "mtuth", "mizan tepi"]],
+  ["Bachuma District Hospital", "District Hospital", ["bachuma"]],
+  ["Maji District Hospital", "District Hospital", ["maji"]],
+  ["Siz District Hospital", "District Hospital", ["siz (hospital)", "siz district"]],
+  ["Chebera Health Center", "Health Center", ["chebera"]],
+  ["Chiruharoot Health", "Health Center", ["chiruharoot"]],
+  ["Jemu Health Center", "Health Center", ["jemu", "jomu"]],
+  ["Kuju Health Center", "Health Center", ["kuju"]],
+  ["Siz Health Center", "Health Center", ["siz (clinic)", "siz (health center)", "siz health"]],
+  ["Tum Health Center", "Health Center", ["tum"]],
+];
+const FAC_ORDER = FACILITIES.map(f => f[0]);
+const LEVEL_ORDER = ["Regional Hospital", "District Hospital", "Health Center"];
+const TEXT_POINTS = { poor: 0, fair: 1, good: 2 };
+const NA_WORDS = new Set(["n/a", "na", "n_a", "not applicable", "not_applicable", "none", "-"]);
+
+/* Earlier years, copied from the VHP spreadsheets (pivot values, rounded as shown there).
+   Used only where the live layers have no assessment for that facility and year. */
+const F = FAC_ORDER;
+const HISTORY = {
+  clinical: { years: [2022, 2023, 2024, 2025], rows: [
+    [F[0], 53, 65, 84, 91], [F[1], 54, 71, 87, 94], [F[2], 47, 75, 68, 88], [F[3], null, 50, 46, 82],
+    [F[4], 50, 67, 64, 79], [F[5], 32, 67, 63, 96], [F[6], 32, 88, 55, 88], [F[7], null, 33, 50, 75],
+    [F[8], 39, 58, 82, 83], [F[9], 29, 54, 54, 100]] },
+  wash: { years: [2021, 2022, 2023, 2024], rows: [
+    [F[0], null, null, 34, 78], [F[1], 64, 63, 56, 75], [F[2], 71, 63, 81, 90], [F[3], 61, 27, 59, 84],
+    [F[4], 46, 37, 34, 56], [F[5], 25, 33, 34, 47], [F[6], 54, 53, 47, 65], [F[7], 36, 17, 22, 44],
+    [F[8], 54, 27, 31, 82], [F[9], 68, 30, 44, 63]] },
+  // [facility, year, obstetric #1, obstetric #2, newborn #1, newborn #2]
+  nmw: [
+    [F[0], 2022, 65, 62, 84, 58], [F[0], 2023, 79, 76, 84, 91], [F[0], 2024, 77, 81, 76, 85], [F[0], 2025, 86, 79, 90, 85],
+    [F[1], 2021, 44, 47, 42, 56], [F[1], 2022, 77, 76, 65, 73], [F[1], 2023, 79, 83, 83, 72], [F[1], 2024, 66, 89, 55, 95], [F[1], 2025, 84, 87, 93, 83],
+    [F[2], 2021, 41, 37, 57, 56], [F[2], 2022, 73, 40, 79, 54], [F[2], 2023, 92, 54, 86, 41], [F[2], 2024, 82, 58, 74, 55], [F[2], 2025, 82, 66, 97, 67],
+    [F[3], 2023, 43, 72, 45, 70], [F[3], 2024, 76, 73, 78, 82], [F[3], 2025, 80, 85, 87, 77],
+    [F[4], 2021, 60, 54, 61, 51], [F[4], 2022, 43, 60, 40, 60], [F[4], 2023, 81, 74, 79, 81], [F[4], 2024, 60, 66, 65, 78], [F[4], 2025, 71, 60, 68, 68],
+    [F[5], 2022, 86, 69, 81, null], [F[5], 2023, 82, 92, 80, 83], [F[5], 2025, 68, 50, 81, 39],
+    [F[6], 2021, 35, 42, 45, 58], [F[6], 2022, 79, 79, 80, 83], [F[6], 2023, 77, null, 80, null], [F[6], 2024, 78, 72, 70, 80], [F[6], 2025, 85, 80, 90, 68],
+    [F[7], 2022, 73, 21, 66, 40], [F[7], 2023, 85, 65, 77, 67], [F[7], 2024, 61, 71, 24, 75], [F[7], 2025, 61, 71, 39, 77],
+    [F[8], 2021, 60, 48, 58, 53], [F[8], 2022, 91, 50, 86, 50], [F[8], 2023, 92, 89, 93, 71], [F[8], 2024, 71, 72, 71, 73], [F[8], 2025, 84, 80, 85, 75],
+    [F[9], 2021, 38, 42, null, null], [F[9], 2022, 59, 66, 53, 68], [F[9], 2023, 91, 83, 78, 57], [F[9], 2024, 91, 80, 71, 69], [F[9], 2025, 66, 77, 75, 82],
+  ],
+};
+
+const modules = (sec, count) => {
+  const out = [];
+  for (let m = 1; m <= count; m++) for (const n of [1, 2]) out.push([`Module ${m}: NMW #${n} - Score`, `_6${sec}${m}_module_${m}_nmw_${n}_score`, n]);
+  return out;
+};
+const SURVEYS = [
+  { key: "clinical", name: "Clinical", kind: "score",
+    url: `${SVC}/survey123_22ce58c6908c49e7bbe57f9b888a454a/FeatureServer/0`,
+    chartTitle: "VHP CLINICAL Assessment WOZ", title: "VHP CLINICAL Assessment {year} - WOZ",
+    date: "_11_date", facility: ["_13_facility_name", "_13_facility_name_other"], level: ["_14_facility_level", "_14_facility_level_other"],
+    labels: ["1.1 Date:", "1.3 Facility Name:", "1.4 Facility Level:"],
+    info: [["3.1 Catchment Population:", "_31_catchment_population", "#,##0"], ["3.2 Women Served by Facility:", "_32_women_served_by_facility", "#,##0"],
+           ["3.4 Maternal Deliveries in Facility/Year:", "_34_maternal_deliveries_in_faci", "0"], ["3.45 Cesarian Sections in Facility/Year", null, "0"]],
+    sections: [["IPG and CATCH-IT Program:", "_414_score_ipg_and_catch_it_pro"], ["Labor and Delivery Section:", "_4214_score_the_labor_and_deliv"],
+      ["NICU:", "_4314_score_the_nicu_section"], ["Operating Theatre:", "_4414_score_the_operating_theat"], ["Facility Cleaning Protocols:", "_458_facility_cleaning_protocol"],
+      ["Handwashing and Hand Hygiene:", "_465_handwashing_and_hand_hygie"], ["Personal Protective Equipment:", "_474_personal_protective_equipm"],
+      ["Facility Surgical Instruments:", "_483_facility_surgical_instrume"], ["Medical Waste:", "_493_score_the_medical_waste_se"],
+      ["Maternity Waiting Area:", "_514_maternity_waiting_area_sec"], ["Pharmacy:", "_525_the_pharmacy_section"], ["Labor and Delivery Area:", "_535_laboratory_section"],
+      ["NICU:", "_545_blood_bank_section"], ["Obstetric Care:", "_611_obstetric_care_section"], ["Newborn:", "_621_newborn_section"],
+      ["Patient Referral:", "_634_patient_referral_section"], ["Operating Theater:", "_555_score_the_operating_theate"], ["Laboratory:", "_565_score_the_laboratory_secti"],
+      ["Blood Bank:", "_575_score_the_blood_bank_secti"]] },
+  { key: "wash", name: "WASH", kind: "score",
+    url: `${SVC}/survey123_0f00a15ccc1d4380826033c4b64cc933/FeatureServer/0`,
+    chartTitle: "VHP-WEFTA WASH Assessment WOZ", title: "VHP-WEFTA WASH Assessment {year} - WOZ",
+    date: "date_of_review", facility: ["faculty_name", "faculty_name_other"], level: ["facility_level_", "facility_level__other"],
+    labels: ["1.1. Date of Review:", "1.2. Facility Name:", "1.3. Facility Level:"],
+    info: [["Total Catchment Population", "total_population_served", "#,##0"]],
+    sections: [["Compound", "score_the_compound_section"], ["Drainage/Standing Water", "score_the_drainagestanding_wate"], ["Vector Control", "score_the_vector_control_sectio"],
+      ["Facility", "score_the_facility"], ["Biohazard Area", "score_the_biohazard_area"], ["Latrines", "score_latrines"], ["Handwashing Stations", "score_handwashing_stations"],
+      ["Water Source", "score_water_source"], ["Water Quality", "_115_score_water_quality"], ["Facility Water Storage", "score_the_facility_water_storag"],
+      ["Chlorine Production and/or Acquisition", "_1313_score_the_facility_chlori"], ["Facility Water Treatment", "score_the_facility_water_treatm"],
+      ["Facility Wastewater System", "score_the_facility_wastewater_s"], ["Facility Power", "score_the_facility_power"], ["Facility Solar", "_1712_score_the_facility_solar"],
+      ["Facility O&M", "score_the_facility_om"], ["Facility Tools and Equipment", "score_the_facility_tools_and_eq"]] },
+  { key: "nmw", name: "Nurse Mid-Wife", kind: "nmw",
+    url: `${SVC}/survey123_f9f1312ae24d46b0ae1ac76b11d428d7/FeatureServer/0`,
+    chartTitle: "VHP Nurse Mid-Wife Assessment WOZ", title: "VHP Nurse Mid-Wife Assessment {year} - WOZ",
+    date: "date_of_review", facility: ["facility_name", "facility_name_other"], level: ["facility_level", null],
+    labels: ["1.1. Date of Current Review:", "1.3. Facility Name", "1.4. Facility Level"],
+    infoFromClinical: ["3.1 Catchment Population:", "3.2 Women Served by Facility:", "3.4 Maternal Deliveries in Facility/Year:"],
+    blocks: [
+      { name: "Obstetric Care", modules: modules(1, 8),
+        avgs: [["Obstetric Care NMW #1 - Total Average Score", "_619_nmw_1_total_average_score", 1], ["Obstetric Care NMW #2 - Total Average Score", "_619_nmw_2_total_average_score", 2]],
+        section: ["6.1.10. Score the Obstetric Care Section:", "_6110_score_the_obstetric_care_"] },
+      { name: "New Born Care", modules: modules(2, 6),
+        avgs: [["Newborn Care NMW #1 - Total Average Score", "_627_nmw_1_total_average_score", 1], ["Newborn Care NMW #2 - Total Average Score", "_627_nmw_2_total_average_score", 2]],
+        section: ["6.2.8. Score the Newborn Care Section:", "_628_score_the_newborn_care_sec"] }] },
+];
+
+/* ============================== HELPERS ============================== */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const blank = v => v === null || v === undefined || (typeof v === "number" && isNaN(v)) || String(v).trim() === "";
+const cleanText = s => blank(s) ? null : String(s).replace(/_/g, " ").replace(/\s+/g, " ").trim();
+const toNum = v => { if (blank(v)) return null; const n = parseFloat(String(v).replace(/,/g, "")); return isNaN(n) ? null : n; };
+const mean = a => { const v = a.filter(x => x !== null && x !== undefined && !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+const sum = a => { const v = a.filter(x => x !== null && x !== undefined && !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) : null; };
+const pct = v => v === null || v === undefined ? "" : Math.round(v * 100) + "%";
+const r0 = v => v === null || v === undefined ? "" : Math.round(v);
+const fmtInt = v => v === null || v === undefined ? "" : Math.round(v).toLocaleString("en-US");
+const fmtDate = d => d ? `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}` : "";
+const levelRank = l => { const i = LEVEL_ORDER.indexOf(l); return i < 0 ? LEVEL_ORDER.length : i; };
+const facRank = f => { const i = FAC_ORDER.indexOf(f); return i < 0 ? 99 : i; };
+const sortFac = rows => [...rows].sort((a, b) => levelRank(a.level) - levelRank(b.level) || facRank(a.facility) - facRank(b.facility) || a.facility.localeCompare(b.facility));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const yearColor = y => css(`--y${y}`) || "#777777";
+const ss = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} }, del(k) { try { sessionStorage.removeItem(k); } catch {} } };
+
+function canonical(name) {
+  const n = (cleanText(name) || "").toLowerCase();
+  if (!n) return [null, null];
+  for (const [c, l, a] of FACILITIES) if (n === c.toLowerCase() || a.includes(n)) return [c, l];
+  for (const [c, l, a] of FACILITIES) if (a.some(x => n.startsWith(x))) return [c, l];
+  return [cleanText(name), null];
+}
+const levelOf = f => (FACILITIES.find(x => x[0] === f) || [])[1] || "Unassigned";
+function pointsOf(...vals) {
+  for (const v of vals) {
+    if (blank(v)) continue;
+    const s = String(v).trim().toLowerCase().replace(/^_+/, "").trim();
+    if (NA_WORDS.has(s)) return null;
+    let m = s.match(/\((-?\d+(?:\.\d+)?)\)/); if (m) return parseFloat(m[1]);
+    m = s.match(/^-?\d+(?:\.\d+)?/); if (m) return parseFloat(m[0]);
+    if (s in TEXT_POINTS) return TEXT_POINTS[s];
+  }
+  return "UNKNOWN";
+}
+const choicesOf = f => Object.fromEntries(((f && f.domain && f.domain.codedValues) || []).map(c => [String(c.code).trim(), String(c.name).trim()]));
+const decode = (ch, v) => blank(v) ? null : (ch[String(v).trim()] ?? v);
+
+/* ============================== ARCGIS ============================== */
+const state = { token: ss.get("vhp_token"), user: ss.get("vhp_user"), results: null, tab: "clinical", sheetYear: {}, sel: {}, charts: [] };
+async function arc(url, params = {}) {
+  const body = new URLSearchParams({ ...params, f: "json" });
+  if (state.token) body.set("token", state.token);
+  const j = await (await fetch(url, { method: "POST", body })).json();
+  if (j.error) { const e = new Error(j.error.message || "ArcGIS error"); e.code = j.error.code; throw e; }
+  return j;
+}
+async function signIn(username, password) {
+  const origin = location.origin && location.origin !== "null" ? location.origin : null;
+  const body = new URLSearchParams({ username, password, expiration: "240", f: "json", client: origin ? "referer" : "requestip" });
+  if (origin) body.set("referer", origin);
+  const j = await (await fetch(`${PORTAL}/sharing/rest/generateToken`, { method: "POST", body })).json();
+  if (!j.token) throw new Error((j.error && (j.error.details?.[0] || j.error.message)) || "Sign-in failed");
+  state.token = j.token; state.user = username; ss.set("vhp_token", j.token); ss.set("vhp_user", username);
+}
+function surveyFields(cfg) {
+  let f = ["objectid", "CreationDate", cfg.date, ...cfg.facility, ...cfg.level];
+  if (cfg.kind === "score") f = f.concat(cfg.info.map(i => i[1]), cfg.sections.map(s => s[1]));
+  else for (const b of cfg.blocks) f = f.concat(b.modules.map(m => m[1]), b.avgs.map(a => a[1]), [b.section[1]]);
+  return [...new Set(f.filter(Boolean))];
+}
+async function loadSurvey(cfg) {
+  const meta = await arc(cfg.url);
+  const fm = Object.fromEntries((meta.fields || []).map(f => [f.name, f]));
+  const fields = surveyFields(cfg).filter(f => fm[f]);
+  let rows = [], offset = 0;
+  for (;;) {
+    const r = await arc(`${cfg.url}/query`, { where: "1=1", outFields: fields.join(","), returnGeometry: "false", orderByFields: "objectid", resultOffset: offset, resultRecordCount: 1000 });
+    const feats = r.features || [];
+    rows = rows.concat(feats.map(f => f.attributes));
+    if (!feats.length || !r.exceededTransferLimit) break;
+    offset += feats.length;
+  }
+  return { rows, fm };
+}
+
+/* ============================== SCORING ============================== */
+function baseRecord(a, fm, cfg) {
+  const [ff, fo] = cfg.facility, [lf, lo] = cfg.level;
+  let name = decode(choicesOf(fm[ff]), a[ff]);
+  if (blank(name) || String(name).trim().toLowerCase() === "other") name = blank(a[fo]) ? name : a[fo];
+  const [facility, canonLevel] = canonical(name);
+  const raw = cleanText(decode(choicesOf(fm[lf]), a[lf]));
+  let level = raw;
+  if ((raw || "").toLowerCase() === "other" && lo && !blank(a[lo])) level = cleanText(a[lo]);
+  const t = a[cfg.date] ?? a.CreationDate, date = blank(t) ? null : new Date(t);
+  return { facility, level: canonLevel || level || "Unassigned", levelRaw: raw || "", date, year: date ? date.getUTCFullYear() : null, source: "live" };
+}
+const isTest = f => /^test\b|\btest$/i.test(String(f || "").trim());
+function latestPerYear(recs) {
+  const by = new Map(), dups = [];
+  for (const r of recs.filter(r => r.facility && r.year)) { const k = r.year + "|" + r.facility; if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+  const final = [];
+  for (const [k, list] of by) { list.sort((a, b) => (a.date || 0) - (b.date || 0)); final.push(list[list.length - 1]); if (list.length > 1) dups.push(`${k.replace("|", " ")} (${list.length})`); }
+  return { final, dups };
+}
+function processScore(cfg, { rows, fm }) {
+  const unknown = [];
+  const secs = cfg.sections.map(([label, field]) => {
+    const ch = choicesOf(fm[field]);
+    const pts = Object.fromEntries(Object.entries(ch).map(([c, n]) => [c, pointsOf(c, n)]));
+    const nums = Object.values(pts).filter(p => typeof p === "number");
+    return { label, field, pts, max: nums.length ? Math.max(...nums) : null };
+  });
+  const recs = rows.map(a => {
+    const r = baseRecord(a, fm, cfg);
+    r.info = cfg.info.map(([, f]) => f ? toNum(a[f]) : null);
+    r.scores = secs.map(s => {
+      const v = a[s.field]; if (blank(v)) return null;
+      let p = s.pts[String(v).trim()]; if (p === undefined) p = pointsOf(v);
+      if (p === "UNKNOWN") { unknown.push(`${s.label} "${v}"`); return null; }
+      return p;
+    });
+    return r;
+  });
+  secs.forEach((s, i) => { if (s.max === null) { const v = recs.map(r => r.scores[i]).filter(x => x !== null); s.max = v.length ? Math.max(...v) : 0; } });
+  const avail = secs.reduce((t, s) => t + (s.max || 0), 0);
+  for (const r of recs) {
+    r.total = sum(r.scores); r.avail = avail;
+    r.adj = r.scores.reduce((t, p, i) => t + (p === null ? 0 : secs[i].max || 0), 0);
+    r.pctAvail = r.total === null ? null : r.total / avail;
+    r.pctAdj = r.total === null || !r.adj ? null : r.total / r.adj;
+  }
+  // skip test entries and submissions with no scores at all
+  const { final, dups } = latestPerYear(recs.filter(r => r.total !== null && !isTest(r.facility)));
+  // add spreadsheet years where the layer has nothing for that facility + year
+  const h = HISTORY[cfg.key], have = new Set(final.map(r => r.year + "|" + r.facility));
+  for (const [fac, ...vals] of h.rows) h.years.forEach((y, i) => {
+    if (vals[i] !== null && !have.has(y + "|" + fac)) final.push({ facility: fac, level: levelOf(fac), year: y, pctAdj: vals[i] / 100, source: "excel" });
+  });
+  return { cfg, final, dups, unknown: [...new Set(unknown)], n: rows.length };
+}
+function processNmw(cfg, { rows, fm }) {
+  const unknown = [];
+  const recs = rows.map(a => {
+    const r = baseRecord(a, fm, cfg);
+    r.blocks = cfg.blocks.map(b => {
+      const mods = b.modules.map(([, f]) => toNum(a[f]));
+      const avgs = b.avgs.map(([, f, n]) => { const s = toNum(a[f]); return s !== null ? s : mean(mods.filter((_, i) => b.modules[i][2] === n)); });
+      let sec = a[b.section[1]];
+      if (!blank(sec)) { sec = pointsOf(sec, choicesOf(fm[b.section[1]])[String(sec).trim()]); if (sec === "UNKNOWN") { unknown.push(`${b.section[0]} "${a[b.section[1]]}"`); sec = null; } } else sec = null;
+      return { mods, avgs, sec };
+    });
+    return r;
+  });
+  const { final, dups } = latestPerYear(recs.filter(r => !isTest(r.facility) && r.blocks.some(b => b.avgs.some(v => v !== null))));
+  const have = new Set(final.map(r => r.year + "|" + r.facility));
+  for (const [fac, y, o1, o2, n1, n2] of HISTORY.nmw) if (!have.has(y + "|" + fac))
+    final.push({ facility: fac, level: levelOf(fac), year: y, source: "excel", blocks: [{ avgs: [o1, o2] }, { avgs: [n1, n2] }] });
+  return { cfg, final, dups, unknown: [...new Set(unknown)], n: rows.length };
+}
+const yearsOf = (res, liveOnly) => [...new Set(res.final.filter(r => !liveOnly || r.source === "live").map(r => r.year))].sort((a, b) => a - b);
+const facsOf = res => sortFac([...new Map(res.final.map(r => [r.facility, r])).values()]);
+const find = (res, fac, y) => res.final.find(r => r.facility === fac && r.year === y);
+
+/* ============================== LOAD ============================== */
+const setStatus = t => $("#status").textContent = t;
+function showControls(on) { ["#refreshBtn", "#exportBtn"].forEach(s => $(s).classList.toggle("hidden", !on)); $("#signoutBtn").classList.toggle("hidden", !state.token); }
+async function loadAll() {
+  showControls(false);
+  $("#app").innerHTML = `<div class="center"><div class="loading"><div class="spin"></div>Loading surveys from ArcGIS…</div></div>`;
+  try {
+    const loaded = [];
+    for (const cfg of SURVEYS) loaded.push([cfg, await loadSurvey(cfg)]);
+    state.results = {};
+    for (const [cfg, d] of loaded) state.results[cfg.key] = cfg.kind === "score" ? processScore(cfg, d) : processNmw(cfg, d);
+    for (const k in state.results) {
+      const ys = yearsOf(state.results[k]);
+      if (!state.sel[k]) state.sel[k] = new Set(ys);               // all years selected by default
+      const live = yearsOf(state.results[k], true);
+      if (!live.includes(state.sheetYear[k])) state.sheetYear[k] = live[live.length - 1];
+    }
+    setStatus(`${state.user ? state.user + " · " : ""}updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+    showControls(true);
+    renderApp();
+  } catch (e) {
+    if ([498, 499, 403, 401].includes(e.code)) { state.token = null; ss.del("vhp_token"); renderLogin(state.user ? "Your session expired — please sign in again." : ""); }
+    else $("#app").innerHTML = `<div class="center"><div class="login"><h1>Couldn't load the surveys</h1><p>${esc(e.message)}</p><button class="btn primary" onclick="loadAll()">Try again</button></div></div>`;
+  }
+}
+function renderLogin(msg = "") {
+  showControls(false);
+  $("#app").innerHTML = $("#loginTpl").innerHTML;
+  if (state.user) $("#u").value = state.user;
+  $("#loginErr").textContent = msg;
+  $("#loginForm").addEventListener("submit", async ev => {
+    ev.preventDefault(); $("#loginBtn").disabled = true; $("#loginErr").textContent = "";
+    try { await signIn($("#u").value.trim(), $("#p").value); await loadAll(); }
+    catch (e) { $("#loginErr").textContent = e.message; $("#loginBtn").disabled = false; }
+  });
+  (state.user ? $("#p") : $("#u")).focus();
+}
+
+/* ============================== RENDER ============================== */
+function renderApp() {
+  state.charts.forEach(c => c.destroy()); state.charts = [];
+  $("#app").innerHTML = `<nav class="tabs" role="tablist">${SURVEYS.map(c => `<button role="tab" data-tab="${c.key}" aria-selected="${state.tab === c.key}">${esc(c.name)}</button>`).join("")}</nav><div id="view"></div>`;
+  $("#app").querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { state.tab = b.dataset.tab; renderApp(); });
+  const res = state.results[state.tab];
+  res.cfg.kind === "score" ? renderScore(res) : renderNmw(res);
+}
+const selYears = res => yearsOf(res).filter(y => state.sel[res.cfg.key].has(y));
+const rangeText = ys => ys.length ? (ys.length === 1 ? `${ys[0]}` : `${ys[0]}-${ys[ys.length - 1]}`) : "";
+function yearChips(res, swatch = true) {
+  const ys = yearsOf(res), sel = state.sel[res.cfg.key], all = ys.every(y => sel.has(y));
+  return `<div class="years" role="group" aria-label="Years shown"><span class="lbl">Years:</span>
+    <button class="chip all" data-y="all" aria-pressed="${all}">All years</button>
+    ${ys.map(y => `<button class="chip" data-y="${y}" aria-pressed="${sel.has(y)}">${swatch ? `<i style="background:${yearColor(y)}"></i>` : ""}${y}</button>`).join("")}</div>`;
+}
+function bindChips(res) {
+  $("#view").querySelectorAll(".chip").forEach(b => b.onclick = () => {
+    const sel = state.sel[res.cfg.key], ys = yearsOf(res);
+    if (b.dataset.y === "all") { if (ys.every(y => sel.has(y))) sel.clear(); else ys.forEach(y => sel.add(y)); }
+    else { const y = +b.dataset.y; sel.has(y) ? sel.delete(y) : sel.add(y); }
+    renderApp();
+  });
+}
+function sheetYearSelect(res) {
+  const ys = yearsOf(res, true);
+  return `<label>Year <select id="sheetYear">${ys.map(y => `<option ${y === state.sheetYear[res.cfg.key] ? "selected" : ""}>${y}</option>`).join("")}</select></label>`;
+}
+function bindSheetYear(res) { const s = $("#sheetYear"); if (s) s.onchange = e => { state.sheetYear[res.cfg.key] = +e.target.value; renderApp(); }; }
+function notes(res) {
+  const items = [];
+  if (res.final.some(r => r.source === "excel")) items.push("Years with no Survey123 data use the scores from the VHP spreadsheets (marked * in the tables).");
+  if (res.dups.length) items.push(`More than one submission in a year — the latest is used: ${res.dups.map(esc).join(", ")}.`);
+  if (res.unknown.length) items.push(`Values that couldn't be read as points (shown as n/a): ${res.unknown.map(esc).join(", ")}.`);
+  return items.length ? `<details class="notes"><summary>Notes</summary><ul>${items.map(i => `<li>${i}</li>`).join("")}</ul></details>` : "";
+}
+
+/* ---------- chart plumbing ---------- */
+// type labels above, facility labels under the year ticks (NMW), dashed separators, value labels on the latest year
+// pixel span of each group of categories: [label, left, right]
+function groupSpans(x, groups) {
+  const out = []; let start = 0;
+  for (const [label, count] of groups) {
+    const x0 = x.getPixelForValue(start), x1 = x.getPixelForValue(start + count - 1);
+    const half = count > 1 ? (x1 - x0) / (count - 1) / 2 : x.width / x.ticks.length / 2;
+    out.push([label, x0 - half, x1 + half]); start += count;
+  }
+  return out;
+}
+function fitLines(ctx, text, maxW) {           // up to two lines, ellipsis if still too long
+  if (ctx.measureText(text).width <= maxW) return [text];
+  const words = text.split(" "); let a = "";
+  while (words.length && ctx.measureText((a + " " + words[0]).trim()).width <= maxW) a = (a + " " + words.shift()).trim();
+  if (!a) a = words.shift() || "";
+  let b = words.join(" ");
+  while (b.length > 2 && ctx.measureText(b).width > maxW) b = b.slice(0, -2) + "…";
+  return b ? [a, b] : [a];
+}
+const labelsPlugin = {
+  id: "vhpLabels",
+  beforeDraw(chart, _a, o) {                   // light shading behind every other facility (under the gridlines)
+    if (!o.bottom) return;
+    const { ctx, chartArea: ca, scales: { x } } = chart;
+    ctx.save(); ctx.fillStyle = "#f6f7f9";
+    groupSpans(x, o.bottom).forEach(([, l, r], i) => { if (i % 2) ctx.fillRect(l, ca.top, r - l, ca.bottom - ca.top); });
+    ctx.restore();
+  },
+  afterDraw(chart, _a, o) {                    // facility names in their own row under the year labels
+    if (!o.bottom) return;
+    const { ctx, scales: { x } } = chart;
+    ctx.save();
+    const y0 = x.bottom + 6;
+    groupSpans(x, o.bottom).forEach(([label, l, r]) => {
+      ctx.strokeStyle = "#9a9a9a"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(l + 4, y0); ctx.lineTo(l + 4, y0 + 4); ctx.lineTo(r - 4, y0 + 4); ctx.lineTo(r - 4, y0); ctx.stroke();
+      ctx.font = "600 12px Inter, sans-serif"; ctx.fillStyle = "#1a1a1a"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      fitLines(ctx, label, r - l - 8).forEach((line, i) => ctx.fillText(line, (l + r) / 2, y0 + 9 + i * 15));
+    });
+    ctx.restore();
+  },
+  afterDatasetsDraw(chart, _a, o) {
+    const { ctx, chartArea: ca, scales: { x } } = chart;
+    ctx.save();
+    const drawGroups = (groups, y, font, color, sep) => {
+      let start = 0;
+      groups.forEach(([label, count], gi) => {
+        const x0 = x.getPixelForValue(start), x1 = x.getPixelForValue(start + count - 1);
+        const half = count > 1 ? (x1 - x0) / (count - 1) / 2 : x.width / x.ticks.length / 2;
+        if (sep && gi > 0) { const xs = x0 - half; ctx.strokeStyle = "#d9d9d9"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xs, ca.top - 16); ctx.lineTo(xs, ca.bottom); ctx.stroke(); ctx.setLineDash([]); }
+        ctx.font = font; ctx.fillStyle = color; ctx.textAlign = "center";
+        let t = label; const maxW = (x1 - x0) + half * 2 - 4;
+        while (t.length > 3 && ctx.measureText(t).width > maxW) t = t.slice(0, -2);
+        if (t !== label) t = t.slice(0, -1) + "…";
+        ctx.fillText(t, (x0 + x1) / 2, y);
+        start += count;
+      });
+    };
+    if (o.top) drawGroups(o.top, ca.top - 8, "600 11.5px Inter, sans-serif", "#555", true);
+    if (o.valueLabels) {
+      const di = chart.data.datasets.length - 1, meta = chart.getDatasetMeta(di), ds = chart.data.datasets[di];
+      const horiz = chart.options.indexAxis === "y";
+      ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#333";
+      ctx.textAlign = horiz ? "left" : "center"; ctx.textBaseline = horiz ? "middle" : "alphabetic";
+      meta.data.forEach((bar, i) => { const v = ds.data[i]; if (v === null || v === undefined) return;
+        horiz ? ctx.fillText(o.valueLabels(v), bar.x + 4, bar.y) : ctx.fillText(o.valueLabels(v), bar.x, bar.y - 5); });
+    }
+    ctx.restore();
+  }
+};
+function chartOptions({ yMax, yFmt, top, bottom, valueLabels, tip, xTicks }) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, devicePixelRatio: 2,
+    layout: { padding: { top: top ? 26 : 16, bottom: bottom ? 44 : 0 } },
+    interaction: { mode: "nearest", axis: "x", intersect: false },
+    scales: {
+      x: { grid: { display: false }, border: { color: "#bdbdbd" }, ticks: { color: "#333", font: { size: 11 }, autoSkip: false, maxRotation: xTicks?.rot ?? 0, minRotation: xTicks?.rot ?? 0 } },
+      y: { min: 0, max: yMax, grid: { color: "#e6e6e6" }, border: { display: false }, ticks: { color: "#555", font: { size: 11 }, stepSize: yMax / 4, callback: yFmt } },
+    },
+    plugins: {
+      legend: { display: false },
+      vhpLabels: { top, bottom, valueLabels },
+      tooltip: { backgroundColor: "#fff", titleColor: "#1a1a1a", bodyColor: "#333", borderColor: "#d9d9d9", borderWidth: 1, padding: 10, boxPadding: 4, callbacks: tip },
+    },
+  };
+}
+const bar = color => ({ backgroundColor: color, hoverBackgroundColor: color, borderRadius: 4, borderSkipped: "start", barPercentage: 0.84, categoryPercentage: 0.8, maxBarThickness: 18 });
+function groupsBy(list, key) { const g = []; for (const it of list) { const k = key(it); if (g.length && g[g.length - 1][0] === k) g[g.length - 1][1]++; else g.push([k, 1]); } return g; }
+const tipStyle = { backgroundColor: "#fff", titleColor: "#1a1a1a", bodyColor: "#333", borderColor: "#d9d9d9", borderWidth: 1, padding: 10, boxPadding: 4 };
+function hbarOptions(xMax, fmt, tip, valueLabels) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, devicePixelRatio: 2, indexAxis: "y",
+    layout: { padding: { right: 40 } }, interaction: { mode: "nearest", axis: "y", intersect: false },
+    scales: {
+      y: { grid: { display: false }, border: { color: "#bdbdbd" }, ticks: { color: "#333", font: { size: 11.5 }, autoSkip: false,
+           callback(v) { const l = this.getLabelForValue(v); return l.length > 34 ? l.slice(0, 33) + "…" : l; } } },
+      x: { min: 0, max: xMax, grid: { color: "#e6e6e6" }, border: { display: false }, ticks: { color: "#555", font: { size: 11 }, stepSize: xMax / 4, callback: fmt } },
+    },
+    plugins: { legend: { display: false }, vhpLabels: { valueLabels }, tooltip: { ...tipStyle, callbacks: tip } },
+  };
+}
+function lineOptions(yMax, fmt, tip) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, devicePixelRatio: 2,
+    layout: { padding: { top: 16, right: 16 } }, interaction: { mode: "index", intersect: false },
+    scales: {
+      x: { grid: { display: false }, border: { color: "#bdbdbd" }, ticks: { color: "#333", font: { size: 12 } } },
+      y: { min: 0, max: yMax, grid: { color: "#e6e6e6" }, border: { display: false }, ticks: { color: "#555", font: { size: 11 }, stepSize: yMax / 4, callback: fmt } },
+    },
+    plugins: { legend: { display: false }, tooltip: { ...tipStyle, callbacks: tip } },
+  };
+}
+const line = (color, dashed) => ({ borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: true, borderDash: dashed ? [6, 4] : [] });
+const TYPE_COLORS = { "Regional Hospital": "#2a6aa8", "District Hospital": "#e07b39", "Health Center": "#3d7a35" };
+const typeColor = lv => TYPE_COLORS[lv] || "#8e4fb0";
+
+function makeChart(id, cfg, minWidthPx = 0, heightPx = null) {
+  const canvas = $("#" + id), box = canvas.parentElement;
+  box.style.minWidth = minWidthPx ? minWidthPx + "px" : "";
+  box.style.height = heightPx ? heightPx + "px" : "";
+  const ch = new Chart(canvas, { type: "bar", ...cfg, plugins: [labelsPlugin] });
+  state.charts.push(ch);
+  return ch;
+}
+
+/* ---------- chart type dropdown, legend, download ---------- */
+const SCORE_TYPES = [["facility", "Bars by facility"], ["hbar", "Horizontal bars"], ["typeTrend", "Trend by facility type (line)"], ["yearAvg", "Average score by year"]];
+const NMW_TYPES = [["facility", "Bars by facility and year"], ["hbar", "Horizontal bars"], ["nmwTrend", "Trend — NMW #1 vs #2 (line)"], ["typeTrend", "Trend by facility type (line)"]];
+state.ctype = {}; state.dl = {};
+const ctype = id => state.ctype[id] || "facility";
+function chartBlock(id, types, label) {
+  return `<div class="chartbar">
+      <label>Chart <select data-ctype="${id}">${types.map(([v, t], i) => `<option value="${v}" ${ctype(id) === v ? "selected" : ""}>${t}${i ? "" : " (default)"}</option>`).join("")}</select></label>
+      <button class="btn" data-dl="${id}" title="Download this chart as a PNG image">⤓ Download PNG</button>
+    </div>
+    <div class="legend" id="lg-${id}"></div>
+    <div class="chartscroll"><div class="chartbox"><canvas id="${id}" role="img" aria-label="${esc(label)}"></canvas></div></div>`;
+}
+function bindChartBars() {
+  $("#view").querySelectorAll("[data-ctype]").forEach(s => s.onchange = () => { state.ctype[s.dataset.ctype] = s.value; renderApp(); });
+  $("#view").querySelectorAll("[data-dl]").forEach(b => b.onclick = () => downloadChart(b.dataset.dl));
+}
+function setLegend(id, items, info) {
+  const el = $("#lg-" + id);
+  if (el) el.innerHTML = items.map(([t, c, dashed]) => `<span><i style="background:${c};${dashed ? "opacity:.6" : ""}"></i>${esc(t)}</span>`).join("");
+  state.dl[id] = { ...info, legend: items };
+}
+function downloadChart(id) {
+  const info = state.dl[id], ch = state.charts.find(c => c.canvas.id === id);
+  if (!info || !ch) return;
+  const src = ch.canvas, s = src.width / ch.width;
+  const pad = 24 * s, titleH = 24 * s, subH = info.subtitle ? 22 * s : 0, legH = info.legend.length ? 28 * s : 0;
+  const out = document.createElement("canvas");
+  out.width = src.width + pad * 2; out.height = src.height + pad * 2 + titleH + subH + legH + 10 * s;
+  const g = out.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, out.width, out.height);
+  g.textAlign = "center"; g.textBaseline = "alphabetic"; g.fillStyle = "#555";
+  let y = pad + 18 * s;
+  g.font = `600 ${18 * s}px Inter, sans-serif`; g.fillText(info.title, out.width / 2, y);
+  if (info.subtitle) { y += subH; g.font = `500 ${15 * s}px Inter, sans-serif`; g.fillText(info.subtitle, out.width / 2, y); }
+  if (legH) {
+    y += legH; g.font = `${13 * s}px Inter, sans-serif`; g.textAlign = "left";
+    const items = info.legend.map(([t, c]) => [t, c, 16 * s + g.measureText(t).width + 18 * s]);
+    let x = (out.width - items.reduce((a, it) => a + it[2], 0) + 18 * s) / 2;
+    for (const [t, c, w] of items) { g.fillStyle = c; g.fillRect(x, y - 10 * s, 10 * s, 10 * s); g.fillStyle = "#333"; g.fillText(t, x + 16 * s, y); x += w; }
+  }
+  g.drawImage(src, pad, y + 12 * s);
+  out.toBlob(b => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = [info.title, info.subtitle].filter(Boolean).join(" ").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") + ".png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, "image/png");
+}
+
+/* ---------- Clinical / WASH ---------- */
+function renderScore(res) {
+  const cfg = res.cfg, ys = selYears(res), facs = facsOf(res), t = ctype("c1");
+  $("#view").innerHTML = `
+    <section class="block">
+      <h2>${esc(cfg.chartTitle)}&nbsp;&nbsp; ${rangeText(ys)}</h2>
+      ${yearChips(res, t !== "typeTrend")}
+      ${ys.length ? chartBlock("c1", SCORE_TYPES, `${cfg.chartTitle} chart`) : `<div class="empty">Select at least one year.</div>`}
+      ${notes(res)}
+    </section>
+    <section class="block"><h3>Pivot — ${esc(PCT_ADJ)}</h3><div class="tablewrap">${scorePivot(res, ys)}</div></section>`;
+  bindChips(res); bindChartBars();
+  if (ys.length) buildScoreChart(res, ys, facs, t);
+}
+function buildScoreChart(res, ys, facs, t) {
+  const cfg = res.cfg, id = "c1", title = `${cfg.chartTitle}   ${rangeText(ys)}`;
+  const val = r => r && r.pctAdj !== null ? Math.round(r.pctAdj * 1000) / 10 : null;
+  const recTip = c => { const r = c.dataset.recs?.[c.dataIndex]; if (!r || r.pctAdj === null) return null;
+    return ` ${c.dataset.label}: ${Math.round(r.pctAdj * 100)}%` + (r.source === "live" ? `  (${r.total} of ${r.adj} points)` : "  (spreadsheet)"); };
+  const pctLbl = v => Math.round(v) + "%";
+  if (t === "facility" || t === "hbar") {
+    const datasets = ys.map(y => ({ label: String(y), ...bar(yearColor(y)), data: facs.map(f => val(find(res, f.facility, y))), recs: facs.map(f => find(res, f.facility, y)) }));
+    const data = { labels: facs.map(f => f.facility), datasets };
+    setLegend(id, [], { title });   // year buttons above act as the legend on screen
+    state.dl[id].legend = ys.map(y => [String(y), yearColor(y)]);
+    if (t === "facility") {
+      const ch = makeChart(id, { data, options: chartOptions({ yMax: 100, yFmt: v => v + "%", top: groupsBy(facs, f => f.level), valueLabels: pctLbl, tip: { label: recTip } }) },
+        facs.length * Math.max(70, ys.length * 20 + 16));
+      ch.options.scales.x.ticks.callback = function (v) { const l = this.getLabelForValue(v); return l.length > 16 ? wrap2(l) : l; };
+      ch.update("none");
+    } else {
+      makeChart(id, { data, options: hbarOptions(100, v => v + "%", { label: recTip }, pctLbl) }, 0, facs.length * (ys.length * 12 + 16) + 50);
+    }
+  } else if (t === "typeTrend") {
+    const levels = [...new Set(facs.map(f => f.level))];
+    const avg = (lv, y) => { const m = mean(res.final.filter(r => r.year === y && (!lv || r.level === lv)).map(r => r.pctAdj)); return m === null ? null : Math.round(m * 1000) / 10; };
+    const datasets = levels.map(lv => ({ label: lv, ...line(typeColor(lv)), data: ys.map(y => avg(lv, y)) }))
+      .concat([{ label: "All facilities", ...line("#8a8a8a", true), data: ys.map(y => avg(null, y)) }]);
+    setLegend(id, levels.map(lv => [lv, typeColor(lv)]).concat([["All facilities", "#8a8a8a", true]]), { title, subtitle: "Average score by facility type" });
+    makeChart(id, { type: "line", data: { labels: ys.map(String), datasets }, options: lineOptions(100, v => v + "%", { label: c => c.raw === null ? null : ` ${c.dataset.label}: ${Math.round(c.raw)}%` }) });
+  } else {   // yearAvg
+    const data = ys.map(y => { const m = mean(res.final.filter(r => r.year === y).map(r => r.pctAdj)); return m === null ? null : Math.round(m * 1000) / 10; });
+    const counts = ys.map(y => res.final.filter(r => r.year === y && r.pctAdj !== null).length);
+    setLegend(id, [], { title, subtitle: "Average score across all facilities" });
+    makeChart(id, { data: { labels: ys.map(String), datasets: [{ label: "Average", ...bar(ys.map(yearColor)), maxBarThickness: 70, data }] },
+      options: chartOptions({ yMax: 100, yFmt: v => v + "%", valueLabels: pctLbl, tip: { label: c => ` Average: ${Math.round(c.raw)}%  (${counts[c.dataIndex]} facilities)` } }) });
+  }
+}
+function wrap2(s) { const w = s.split(" "); let a = ""; while (w.length && (a + " " + w[0]).trim().length <= Math.ceil(s.length / 2) + 2) a = (a + " " + w.shift()).trim(); return [a, w.join(" ")]; }
+
+function scorePivot(res, ys) {
+  const facs = facsOf(res), mark = r => r && r.source === "excel" ? `<span class="xl">*</span>` : "";
+  let h = `<table class="pivot"><thead><tr><th>Row Labels</th>${ys.map(y => `<th class="num">${y}</th>`).join("")}<th class="num">Average</th></tr></thead><tbody>`;
+  for (const lv of [...new Set(facs.map(f => f.level))]) {
+    h += `<tr class="grp"><td>${esc(lv)}</td>${ys.map(() => "<td></td>").join("")}<td></td></tr>`;
+    for (const f of facs.filter(f => f.level === lv)) {
+      const recs = ys.map(y => find(res, f.facility, y));
+      h += `<tr class="fac"><td>${esc(f.facility)}</td>${recs.map(r => `<td class="num">${r ? pct(r.pctAdj) + mark(r) : ""}</td>`).join("")}<td class="num"><b>${pct(mean(recs.map(r => r && r.pctAdj)))}</b></td></tr>`;
+    }
+  }
+  const all = res.final.filter(r => ys.includes(r.year));
+  h += `<tr class="gt"><td>Average</td>${ys.map(y => `<td class="num">${pct(mean(all.filter(r => r.year === y).map(r => r.pctAdj)))}</td>`).join("")}<td class="num">${pct(mean(all.map(r => r.pctAdj)))}</td></tr></tbody></table>`;
+  return h;
+}
+const scoreCell = p => p === null ? `<span class="na">n/a</span>` : `<span class="s${Math.max(0, Math.min(2, Math.round(p)))}">${p}</span>`;
+function scoreSheet(res, rows) {
+  const cfg = res.cfg, n = rows.length, tr = (l, cells, cls = "") => `<tr class="${cls}"><td>${esc(l)}</td>${cells.map(c => `<td class="num">${c}</td>`).join("")}</tr>`;
+  let h = `<table class="sheet"><tbody>`;
+  h += tr(cfg.labels[0], rows.map(r => fmtDate(r.date))) + tr(cfg.labels[1], rows.map(r => esc(r.facility)), "head") + tr(cfg.labels[2], rows.map(r => esc(r.levelRaw)));
+  cfg.info.forEach(([l, , fmt], i) => h += tr(l, rows.map(r => fmt === "0" ? r0(r.info[i]) : fmtInt(r.info[i]))));
+  h += `<tr class="band"><td colspan="${n + 1}">ASSESSMENT SCORING</td></tr>`;
+  cfg.sections.forEach(([l], i) => h += tr(l, rows.map(r => scoreCell(r.scores[i]))));
+  h += tr("TOTAL Assessment Results", rows.map(r => r.total ?? ""), "total") + tr("TOTAL SCORE Available", rows.map(r => r.avail), "calc")
+     + tr("PERCENTAGE (Total Score/Available)", rows.map(r => pct(r.pctAvail)), "calc") + tr("TOTAL SCORE Adjusted (total score - n/a)", rows.map(r => r.adj), "calc")
+     + tr(PCT_ADJ, rows.map(r => pct(r.pctAdj)), "pct");
+  return h + `</tbody></table>`;
+}
+
+/* ---------- Nurse Mid-Wife ---------- */
+function renderNmw(res) {
+  const cfg = res.cfg, ys = selYears(res), sy = state.sheetYear[cfg.key];
+  const cats = sortFac(res.final.filter(r => ys.includes(r.year))).sort((a, b) => levelRank(a.level) - levelRank(b.level) || facRank(a.facility) - facRank(b.facility) || a.year - b.year);
+  $("#view").innerHTML = `
+    ${yearChips(res, false)}
+    ${cfg.blocks.map((b, i) => `<section class="block">
+      <h2>${esc(cfg.chartTitle)}&nbsp;&nbsp; ${rangeText(ys)}<br><span style="font-weight:500">${esc(b.name)}</span></h2>
+      ${ys.length ? chartBlock("n" + i, NMW_TYPES, `${b.name} chart`) : `<div class="empty">Select at least one year.</div>`}
+    </section>`).join("")}
+    ${notes(res)}
+    <section class="block" style="margin-top:16px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px">
+      ${cfg.blocks.map((b, i) => `<div><h3>Pivot — ${esc(b.name)}</h3><div class="tablewrap">${nmwPivot(res, i, ys)}</div></div>`).join("")}
+    </div></section>`;
+  bindChips(res); bindChartBars();
+  if (!ys.length) return;
+  cfg.blocks.forEach((b, i) => buildNmwChart(res, ys, cats, b, i));
+}
+function buildNmwChart(res, ys, cats, b, i) {
+  const id = "n" + i, t = ctype(id), cfg = res.cfg;
+  const info = { title: `${cfg.chartTitle}   ${rangeText(ys)}`, subtitle: b.name };
+  const nmwColors = [css("--nmw1"), css("--nmw2")];
+  const nmwLegend = [["NMW #1", nmwColors[0]], ["NMW #2", nmwColors[1]]];
+  const rnd = v => v === null || v === undefined ? null : Math.round(v);
+  if (t === "facility" || t === "hbar") {
+    const datasets = [0, 1].map(n => ({ label: `NMW #${n + 1}`, ...bar(nmwColors[n]), data: cats.map(r => rnd(r.blocks[i].avgs[n])) }));
+    const tip = { title: c => `${cats[c[0].dataIndex].facility} — ${cats[c[0].dataIndex].year}`,
+                  label: c => c.raw === null ? null : ` ${c.dataset.label}: ${c.raw}` + (cats[c.dataIndex].source === "excel" ? " (spreadsheet)" : "") };
+    setLegend(id, nmwLegend, info);
+    if (t === "facility")
+      makeChart(id, { data: { labels: cats.map(r => String(r.year)), datasets }, options: chartOptions({
+        yMax: 100, yFmt: v => v, top: groupsBy(cats, r => r.level), bottom: groupsBy(cats, r => r.facility), tip }) }, cats.length * 56);
+    else
+      makeChart(id, { data: { labels: cats.map(r => `${r.facility.length > 24 ? r.facility.slice(0, 23) + "…" : r.facility} — ${r.year}`), datasets }, options: hbarOptions(100, v => v, tip, null) }, 0, cats.length * 30 + 50);
+  } else if (t === "nmwTrend") {
+    const datasets = [0, 1].map(n => ({ label: `NMW #${n + 1}`, ...line(nmwColors[n]),
+      data: ys.map(y => rnd(mean(res.final.filter(r => r.year === y).map(r => r.blocks[i].avgs[n])))) }));
+    setLegend(id, nmwLegend, { ...info, subtitle: `${b.name} — average across facilities` });
+    makeChart(id, { type: "line", data: { labels: ys.map(String), datasets }, options: lineOptions(100, v => v, { label: c => c.raw === null ? null : ` ${c.dataset.label}: ${c.raw}` }) });
+  } else {   // typeTrend: average of NMW #1 and #2 by facility type
+    const levels = [...new Set(sortFac(res.final).map(r => r.level))];
+    const avg = (lv, y) => rnd(mean(res.final.filter(r => r.year === y && (!lv || r.level === lv)).flatMap(r => r.blocks[i].avgs)));
+    const datasets = levels.map(lv => ({ label: lv, ...line(typeColor(lv)), data: ys.map(y => avg(lv, y)) }))
+      .concat([{ label: "All facilities", ...line("#8a8a8a", true), data: ys.map(y => avg(null, y)) }]);
+    setLegend(id, levels.map(lv => [lv, typeColor(lv)]).concat([["All facilities", "#8a8a8a", true]]), { ...info, subtitle: `${b.name} — average of NMW #1 and #2 by facility type` });
+    makeChart(id, { type: "line", data: { labels: ys.map(String), datasets }, options: lineOptions(100, v => v, { label: c => c.raw === null ? null : ` ${c.dataset.label}: ${c.raw}` }) });
+  }
+}
+function nmwPivot(res, bi, ys) {
+  const facs = facsOf(res);
+  let h = `<table class="pivot"><thead><tr><th>Row Labels</th><th class="num">NMW #1</th><th class="num">NMW #2</th></tr></thead><tbody>`;
+  for (const lv of [...new Set(facs.map(f => f.level))]) {
+    h += `<tr class="grp"><td colspan="3">${esc(lv)}</td></tr>`;
+    for (const f of facs.filter(f => f.level === lv)) {
+      const recs = res.final.filter(r => r.facility === f.facility && ys.includes(r.year)).sort((a, b) => a.year - b.year);
+      if (!recs.length) continue;
+      h += `<tr class="fac"><td colspan="3"><b>${esc(f.facility)}</b></td></tr>`;
+      for (const r of recs) h += `<tr class="yr"><td>${r.year}${r.source === "excel" ? ' <span class="xl">*</span>' : ""}</td>${r.blocks[bi].avgs.map(v => `<td class="num">${r0(v)}</td>`).join("")}</tr>`;
+    }
+  }
+  const all = res.final.filter(r => ys.includes(r.year));
+  h += `<tr class="gt"><td>Average</td>${[0, 1].map(n => `<td class="num">${r0(mean(all.map(r => r.blocks[bi].avgs[n])))}</td>`).join("")}</tr></tbody></table>`;
+  return h;
+}
+function clinicalInfo(year, facility) {
+  const r = state.results.clinical?.final.find(x => x.year === year && x.facility === facility && x.source === "live");
+  return r ? r.info.slice(0, 3) : [null, null, null];
+}
+function nmwSheet(res, rows) {
+  const cfg = res.cfg, n = rows.length, tr = (l, cells, cls = "") => `<tr class="${cls}"><td>${esc(l)}</td>${cells.map(c => `<td class="num">${c}</td>`).join("")}</tr>`;
+  let h = `<table class="sheet"><tbody>`;
+  h += tr(cfg.labels[0], rows.map(r => fmtDate(r.date))) + tr(cfg.labels[1], rows.map(r => esc(r.facility)), "head") + tr(cfg.labels[2], rows.map(r => esc(r.levelRaw)));
+  cfg.infoFromClinical.forEach((l, i) => h += tr(l, rows.map(r => { const v = clinicalInfo(r.year, r.facility)[i]; return i === 2 ? r0(v) : fmtInt(v); })));
+  h += `<tr class="band"><td colspan="${n + 1}">ASSESSMENT SCORING</td></tr>`;
+  cfg.blocks.forEach((b, bi) => {
+    if (bi) h += `<tr class="gap"><td colspan="${n + 1}"></td></tr>`;
+    b.modules.forEach(([l], mi) => h += tr(l, rows.map(r => r0(r.blocks[bi].mods[mi]))));
+    b.avgs.forEach(([l], ai) => h += tr(l, rows.map(r => r0(r.blocks[bi].avgs[ai])), "avg"));
+    h += tr(b.section[0], rows.map(r => r.blocks[bi].sec === null ? "" : scoreCell(r.blocks[bi].sec)), "secscore");
+  });
+  return h + `</tbody></table>`;
+}
+
+/* ============================== EXCEL EXPORT ============================== */
+function exportExcel() {
+  const wb = XLSX.utils.book_new();
+  const add = (name, aoa, cols, merges, formats) => {
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = cols; if (merges) ws["!merges"] = merges;
+    for (const [r, c, z] of formats || []) { const a = XLSX.utils.encode_cell({ r, c }); if (ws[a] && typeof ws[a].v === "number") ws[a].z = z; }
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  };
+  for (const cfg of SURVEYS) {
+    const res = state.results[cfg.key]; if (!res || !res.final.length) continue;
+    const ys = yearsOf(res), facs = facsOf(res), live = yearsOf(res, true);
+    if (cfg.kind === "score") {
+      const aoa = [[`Average of ${PCT_ADJ}`, "Column Labels"], ["Row Labels", ...ys, "Average"]], fm = [];
+      for (const lv of [...new Set(facs.map(f => f.level))]) {
+        aoa.push([lv]);
+        for (const f of facs.filter(f => f.level === lv)) { const v = ys.map(y => find(res, f.facility, y)?.pctAdj ?? null); aoa.push([f.facility, ...v, mean(v)]); }
+      }
+      aoa.push(["Average", ...ys.map(y => mean(res.final.filter(r => r.year === y).map(r => r.pctAdj))), mean(res.final.map(r => r.pctAdj))]);
+      aoa.forEach((row, r) => row.forEach((_, c) => { if (r > 1 && c > 0) fm.push([r, c, "0%"]); }));
+      add(`${cfg.name} Pivot`, aoa, [{ wch: 34 }, ...ys.map(() => ({ wch: 10 })), { wch: 10 }], null, fm);
+      for (const y of live) {
+        const rows = sortFac(res.final.filter(r => r.year === y && r.source === "live")), fmts = [];
+        const a2 = [[cfg.title.replace("{year}", y)], [cfg.labels[0], ...rows.map(r => fmtDate(r.date))], [cfg.labels[1], ...rows.map(r => r.facility)], [cfg.labels[2], ...rows.map(r => r.levelRaw)],
+          ...cfg.info.map(([l], i) => [l, ...rows.map(r => r.info[i])]), ["ASSESSMENT SCORING"],
+          ...cfg.sections.map(([l], i) => [l, ...rows.map(r => r.scores[i] === null ? "n/a" : r.scores[i])]),
+          ["TOTAL Assessment Results", ...rows.map(r => r.total)], ["TOTAL SCORE Available", ...rows.map(r => r.avail)], ["PERCENTAGE (Total Score/Available)", ...rows.map(r => r.pctAvail)],
+          ["TOTAL SCORE Adjusted (total score - n/a)", ...rows.map(r => r.adj)], [PCT_ADJ, ...rows.map(r => r.pctAdj)]];
+        rows.forEach((_, i) => { fmts.push([a2.length - 3, i + 1, "0%"], [a2.length - 1, i + 1, "0%"]); cfg.info.forEach(([, , f], k) => fmts.push([4 + k, i + 1, f])); });
+        add(`${cfg.name} ${y}`, a2, [{ wch: 42 }, ...rows.map(() => ({ wch: 26 }))], [{ s: { r: 0, c: 0 }, e: { r: 0, c: rows.length } }], fmts);
+      }
+    } else {
+      cfg.blocks.forEach((b, bi) => {
+        const aoa = [["Row Labels", `Average of ${b.name} NMW #1`, `Average of ${b.name} NMW #2`]], fm = [];
+        for (const lv of [...new Set(facs.map(f => f.level))]) {
+          aoa.push([lv]);
+          for (const f of facs.filter(f => f.level === lv)) { aoa.push([f.facility]); for (const r of res.final.filter(x => x.facility === f.facility).sort((a, c) => a.year - c.year)) aoa.push([r.year, ...r.blocks[bi].avgs]); }
+        }
+        aoa.push(["Average", ...[0, 1].map(n => mean(res.final.map(r => r.blocks[bi].avgs[n])))]);
+        aoa.forEach((row, r) => row.forEach((_, c) => { if (r > 0 && c > 0) fm.push([r, c, "0"]); }));
+        add(`NMW ${b.name.replace(/\s+/g, "").replace("NewBornCare", "Newborn").replace("Care", "")} Pivot`, aoa, [{ wch: 34 }, { wch: 30 }, { wch: 30 }], null, fm);
+      });
+      for (const y of live) {
+        const rows = sortFac(res.final.filter(r => r.year === y && r.source === "live")), fmts = [];
+        const a2 = [[cfg.title.replace("{year}", y)], [cfg.labels[0], ...rows.map(r => fmtDate(r.date))], [cfg.labels[1], ...rows.map(r => r.facility)], [cfg.labels[2], ...rows.map(r => r.levelRaw)],
+          ...cfg.infoFromClinical.map((l, i) => [l, ...rows.map(r => clinicalInfo(r.year, r.facility)[i])]), ["ASSESSMENT SCORING"]];
+        cfg.blocks.forEach((b, bi) => {
+          if (bi) a2.push([""]);
+          b.modules.forEach(([l], mi) => a2.push([l, ...rows.map(r => r.blocks[bi].mods[mi])]));
+          b.avgs.forEach(([l], ai) => a2.push([l, ...rows.map(r => r.blocks[bi].avgs[ai])]));
+          a2.push([b.section[0], ...rows.map(r => r.blocks[bi].sec)]);
+        });
+        a2.forEach((row, r) => { if (r > 3) row.forEach((_, c) => { if (c > 0) fmts.push([r, c, r === 4 || r === 5 ? "#,##0" : "0"]); }); });
+        add(`NMW ${y}`, a2, [{ wch: 44 }, ...rows.map(() => ({ wch: 26 }))], [{ s: { r: 0, c: 0 }, e: { r: 0, c: rows.length } }], fmts);
+      }
+    }
+  }
+  const d = new Date();
+  XLSX.writeFile(wb, `VHP_Assessments_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.xlsx`);
+}
+
+/* ============================== START ============================== */
+$("#refreshBtn").onclick = loadAll;
+$("#exportBtn").onclick = () => { try { exportExcel(); } catch (e) { alert("Export failed: " + e.message); } };
+$("#signoutBtn").onclick = () => { state.token = null; ss.del("vhp_token"); state.results = null; state.charts.forEach(c => c.destroy()); state.charts = []; setStatus(""); renderLogin(); };
+loadAll();   // works without sign-in if the layers are shared publicly; otherwise shows the sign-in form
+</script>
+</body>
+</html>
