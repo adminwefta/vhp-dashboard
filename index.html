@@ -149,7 +149,7 @@ const FACILITIES = [
 const FAC_ORDER = FACILITIES.map(f => f[0]);
 const LEVEL_ORDER = ["Regional Hospital", "District Hospital", "Health Center"];
 const TEXT_POINTS = { poor: 0, fair: 1, good: 2 };
-const NA_WORDS = new Set(["n/a", "na", "n_a", "not applicable", "not_applicable", "none", "-"]);
+const NA_WORDS = new Set(["n/a", "na", "n_a", "n a", "not applicable", "not_applicable", "none", "-"]);
 
 /* Earlier years, copied from the VHP spreadsheets (pivot values, rounded as shown there).
    Used only where the live layers have no assessment for that facility and year. */
@@ -260,9 +260,20 @@ function pointsOf(...vals) {
     if (NA_WORDS.has(s)) return null;
     let m = s.match(/\((-?\d+(?:\.\d+)?)\)/); if (m) return parseFloat(m[1]);
     m = s.match(/^-?\d+(?:\.\d+)?/); if (m) return parseFloat(m[0]);
+    // Survey123 codes such as "Good_3_" / "Fair_2_" (from "Good (3)") — read the number between underscores
+    const u = s.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    if (NA_WORDS.has(u)) return null;
+    m = u.match(/(?:^|\s)(-?\d+(?:\.\d+)?)$/); if (m) return parseFloat(m[1]);
     if (s in TEXT_POINTS) return TEXT_POINTS[s];
+    if (u in TEXT_POINTS) return TEXT_POINTS[u];
   }
   return "UNKNOWN";
+}
+const ANSWER_WORDS = ["excellent", "very good", "good", "fair", "poor", "very poor", "bad"];
+function wordOf(v) {
+  if (blank(v)) return null;
+  const s = String(v).toLowerCase().replace(/[_()\d.]+/g, " ").replace(/\s+/g, " ").trim();
+  return ANSWER_WORDS.includes(s) ? s : null;
 }
 const choicesOf = f => Object.fromEntries(((f && f.domain && f.domain.codedValues) || []).map(c => [String(c.code).trim(), String(c.name).trim()]));
 const decode = (ch, v) => blank(v) ? null : (ch[String(v).trim()] ?? v);
@@ -315,14 +326,18 @@ function baseRecord(a, fm, cfg) {
   let level = raw;
   if ((raw || "").toLowerCase() === "other" && lo && !blank(a[lo])) level = cleanText(a[lo]);
   const t = a[cfg.date] ?? a.CreationDate, date = blank(t) ? null : new Date(t);
-  return { facility, level: canonLevel || level || "Unassigned", levelRaw: raw || "", date, year: date ? date.getUTCFullYear() : null, source: "live" };
+  return { oid: a.objectid, facility, level: canonLevel || level || "Unassigned", levelRaw: raw || "", date, year: date ? date.getUTCFullYear() : null, source: "live" };
 }
 const isTest = f => /^test\b|\btest$/i.test(String(f || "").trim());
-function latestPerYear(recs) {
+function latestPerYear(recs, describe = () => "") {
   const by = new Map(), dups = [];
   for (const r of recs.filter(r => r.facility && r.year)) { const k = r.year + "|" + r.facility; if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
   const final = [];
-  for (const [k, list] of by) { list.sort((a, b) => (a.date || 0) - (b.date || 0)); final.push(list[list.length - 1]); if (list.length > 1) dups.push(`${k.replace("|", " ")} (${list.length})`); }
+  for (const [k, list] of by) {
+    list.sort((a, b) => (a.date || 0) - (b.date || 0) || (a.oid || 0) - (b.oid || 0));
+    final.push(list[list.length - 1]);
+    if (list.length > 1) dups.push(`${k.replace("|", " ")}: ` + list.map((r, i) => `${fmtDate(r.date)} #${r.oid} ${describe(r)}${i === list.length - 1 ? " (used)" : ""}`).join(" · "));
+  }
   return { final, dups };
 }
 function processScore(cfg, { rows, fm }) {
@@ -331,15 +346,21 @@ function processScore(cfg, { rows, fm }) {
     const ch = choicesOf(fm[field]);
     const pts = Object.fromEntries(Object.entries(ch).map(([c, n]) => [c, pointsOf(c, n)]));
     const nums = Object.values(pts).filter(p => typeof p === "number");
-    return { label, field, pts, max: nums.length ? Math.max(...nums) : null };
+    // points by answer word (good/fair/poor…) on the form's current scale, for older codes such as "Good_3_"
+    const byWord = {};
+    for (const [c, n] of Object.entries(ch)) { const w = wordOf(n) || wordOf(c); if (w && typeof pts[c] === "number" && !(w in byWord)) byWord[w] = pts[c]; }
+    return { label, field, pts, byWord, max: nums.length ? Math.max(...nums) : null };
   });
+  const over = [];
   const recs = rows.map(a => {
     const r = baseRecord(a, fm, cfg);
     r.info = cfg.info.map(([, f]) => f ? toNum(a[f]) : null);
     r.scores = secs.map(s => {
       const v = a[s.field]; if (blank(v)) return null;
-      let p = s.pts[String(v).trim()]; if (p === undefined) p = pointsOf(v);
+      let p = s.pts[String(v).trim()];
+      if (p === undefined) { const w = wordOf(v); p = w && w in s.byWord ? s.byWord[w] : pointsOf(v); }
       if (p === "UNKNOWN") { unknown.push(`${s.label} "${v}"`); return null; }
+      if (typeof p === "number" && s.max !== null && p > s.max) over.push(`${s.label} "${v}"`);
       return p;
     });
     return r;
@@ -348,18 +369,19 @@ function processScore(cfg, { rows, fm }) {
   const avail = secs.reduce((t, s) => t + (s.max || 0), 0);
   for (const r of recs) {
     r.total = sum(r.scores); r.avail = avail;
-    r.adj = r.scores.reduce((t, p, i) => t + (p === null ? 0 : secs[i].max || 0), 0);
+    // a value above the form's max counts against its own value, so no score can pass 100%
+    r.adj = r.scores.reduce((t, p, i) => t + (p === null ? 0 : Math.max(secs[i].max || 0, p)), 0);
     r.pctAvail = r.total === null ? null : r.total / avail;
     r.pctAdj = r.total === null || !r.adj ? null : r.total / r.adj;
   }
   // skip test entries and submissions with no scores at all
-  const { final, dups } = latestPerYear(recs.filter(r => r.total !== null && !isTest(r.facility)));
+  const { final, dups } = latestPerYear(recs.filter(r => r.total !== null && !isTest(r.facility)), r => pct(r.pctAdj));
   // add spreadsheet years where the layer has nothing for that facility + year
   const h = HISTORY[cfg.key], have = new Set(final.map(r => r.year + "|" + r.facility));
   for (const [fac, ...vals] of h.rows) h.years.forEach((y, i) => {
     if (vals[i] !== null && !have.has(y + "|" + fac)) final.push({ facility: fac, level: levelOf(fac), year: y, pctAdj: vals[i] / 100, source: "excel" });
   });
-  return { cfg, final, dups, unknown: [...new Set(unknown)], n: rows.length };
+  return { cfg, final, dups, unknown: [...new Set(unknown)], over: [...new Set(over)], n: rows.length };
 }
 function processNmw(cfg, { rows, fm }) {
   const unknown = [];
@@ -374,7 +396,7 @@ function processNmw(cfg, { rows, fm }) {
     });
     return r;
   });
-  const { final, dups } = latestPerYear(recs.filter(r => !isTest(r.facility) && r.blocks.some(b => b.avgs.some(v => v !== null))));
+  const { final, dups } = latestPerYear(recs.filter(r => !isTest(r.facility) && r.blocks.some(b => b.avgs.some(v => v !== null))), r => r.blocks.map(b => b.avgs.map(v => v === null ? "–" : Math.round(v)).join("/")).join(", "));
   const have = new Set(final.map(r => r.year + "|" + r.facility));
   for (const [fac, y, o1, o2, n1, n2] of HISTORY.nmw) if (!have.has(y + "|" + fac))
     final.push({ facility: fac, level: levelOf(fac), year: y, source: "excel", blocks: [{ avgs: [o1, o2] }, { avgs: [n1, n2] }] });
@@ -454,7 +476,8 @@ function bindSheetYear(res) { const s = $("#sheetYear"); if (s) s.onchange = e =
 function notes(res) {
   const items = [];
   if (res.final.some(r => r.source === "excel")) items.push("Years with no Survey123 data use the scores from the VHP spreadsheets (marked * in the tables).");
-  if (res.dups.length) items.push(`More than one submission in a year — the latest is used: ${res.dups.map(esc).join(", ")}.`);
+  if (res.dups.length) items.push(`More than one submission in a year — the latest is used (date · record # · score):<ul>${res.dups.map(d => `<li>${esc(d)}</li>`).join("")}</ul>`);
+  if (res.over && res.over.length) items.push(`Values above the section's current maximum (likely an older scoring scale — check these): ${res.over.map(esc).join(", ")}.`);
   if (res.unknown.length) items.push(`Values that couldn't be read as points (shown as n/a): ${res.unknown.map(esc).join(", ")}.`);
   return items.length ? `<details class="notes"><summary>Notes</summary><ul>${items.map(i => `<li>${i}</li>`).join("")}</ul></details>` : "";
 }
